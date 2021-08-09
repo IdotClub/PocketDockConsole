@@ -1,0 +1,6 @@
+{
+  "name": "idotclub/pocket-dock-console",
+  "require": {
+    "wrench/wrench": "^2.0"
+  }
+}
