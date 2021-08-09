@@ -9,7 +9,6 @@ use pocketmine\event\player\PlayerLoginEvent;
 use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\event\player\PlayerRespawnEvent;
 use pocketmine\plugin\PluginBase;
-use pocketmine\ThreadManager;
 use pocketmine\utils\TextFormat;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -18,11 +17,12 @@ class Main extends PluginBase implements Listener {
 
 	public $attachment = null;
 
-	public function onLoad() {
+	public function onLoad() : void {
+		require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 		$this->getLogger()->info(TextFormat::WHITE . "Loaded");
 	}
 
-	public function onEnable() {
+	public function onEnable() : void {
 		$this->getServer()->getPluginManager()->registerEvents($this, $this);
 		$this->saveDefaultConfig();
 		$this->reloadConfig();
@@ -43,7 +43,7 @@ class Main extends PluginBase implements Listener {
 
 	public function setPassword() {
 		if ($this->getConfig()->get("password") == "PocketDockRules!") {
-			$this->getConfig()->set("password", $this->getServer()->getConfigString("rcon.password", ""));
+			$this->getConfig()->set("password", $this->getServer()->getConfigGroup()->getConfigString("rcon.password", ""));
 			$this->getLogger()->info("The password is now the RCON password.");
 			$this->getLogger()->info("If you would like to change the password, please do so in the PDC config.");
 			$this->getConfig()->save();
@@ -104,16 +104,16 @@ class Main extends PluginBase implements Listener {
 		return $names;
 	}
 
-	public function PlayerQuitEvent(PlayerQuitEvent $event) {
+	public function onPlayerQuitEvent(PlayerQuitEvent $event) {
 		$name = $event->getPlayer()->getName();
 		$this->rc->updateInfo($name);
 	}
 
-	public function PlayerRespawnEvent(PlayerRespawnEvent $event) {
+	public function onPlayerRespawnEvent(PlayerRespawnEvent $event) {
 		$this->rc->updateInfo();
 	}
 
-	public function onDisable() {
+	public function onDisable() : void {
 		$this->getLogger()->info(TextFormat::DARK_RED . "Disabled");
 		$this->thread->stop();
 	}

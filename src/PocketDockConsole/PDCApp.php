@@ -5,6 +5,8 @@ namespace PocketDockConsole;
 use pocketmine\utils\Terminal;
 use pocketmine\utils\TextFormat;
 use Wrench\Application\Application;
+use Wrench\Connection;
+use Wrench\Payload\Payload;
 
 class PDCApp extends Application {
 
@@ -19,7 +21,7 @@ class PDCApp extends Application {
 	}
 
 	/**
-	 * @see Wrench\Application.Application::onConnect()
+	 * @see \Wrench\Application.Application::onConnect()
 	 */
 	public function onConnect($client) {
 		$this->thread->log(TextFormat::AQUA . "Connection from: " . $client->getIp());
@@ -30,7 +32,7 @@ class PDCApp extends Application {
 	}
 
 	/**
-	 * @see Wrench\Application.Application::onUpdate()
+	 * @see \Wrench\Application.Application::onUpdate()
 	 */
 	public function onUpdate() {
 		$this->lastTimestamp = time();
@@ -38,7 +40,7 @@ class PDCApp extends Application {
 			$stuffArray = explode("\n", $this->thread->stuffToSend);
 			if (count($stuffArray) == $this->thread->lastLine) {
 			} else {
-				for ($i = $this->thread->lastLine - 1; $i <= count($stuffArray); $i++) {
+				for ($i = $this->thread->lastLine - 1, $iMax = count($stuffArray); $i <= $iMax; $i++) {
 					if (isset($stuffArray[$i])) {
 						$line = trim($stuffArray[$i]) . "\r\n";
 						if ($line === "\r\n") {
@@ -56,7 +58,7 @@ class PDCApp extends Application {
 			$jsonArray = explode("\n", $this->thread->jsonStream);
 			if (count($jsonArray) == $this->thread->lastLineJSON) {
 			} else {
-				for ($i = $this->thread->lastLineJSON - 1; $i <= count($jsonArray); $i++) {
+				for ($i = $this->thread->lastLineJSON - 1, $iMax = count($jsonArray); $i <= $iMax; $i++) {
 					if (isset($jsonArray[$i])) {
 						$line = trim($jsonArray[$i]) . "\r\n";
 						if ($line === "\r\n") {

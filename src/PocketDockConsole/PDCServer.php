@@ -2,13 +2,9 @@
 
 namespace PocketDockConsole;
 
-use Exception;
-use pocketmine\Thread;
+use pocketmine\thread\Thread;
 use pocketmine\utils\Terminal;
 use Wrench\Server;
-
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 class PDCServer extends Thread {
 
@@ -42,8 +38,8 @@ class PDCServer extends Thread {
 		return $this->buffer;
 	}
 
-	public function run() {
-		$this->registerClassLoader();
+	public function onRun() : void {
+		require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 		set_exception_handler(function ($ex) {
 			//var_dump($ex);
 			$this->logger->debug($ex->getMessage());
@@ -54,7 +50,7 @@ class PDCServer extends Thread {
 		}
 
 		$server = new Server('ws://' . $this->host . ':' . $this->port, ["logger" => function ($msg, $pri) {
-		}], $this);
+		}]);
 
 		$server->registerApplication("app", new PDCApp($this, $this->password));
 		$server->addListener(Server::EVENT_SOCKET_CONNECT, function ($data, $other) {
@@ -66,13 +62,28 @@ class PDCServer extends Thread {
 				$other->onData($header);
 			}
 		});
-
-		while ($this->stop !== true) {
-			try {
-				$server->run();
-			} catch (Exception $e) {
-
+		$server->getConnectionManager()->listen();
+		$property = new \ReflectionProperty($server, 'applications');
+		$property->setAccessible(true);
+		while (true) {
+			if ($this->stop) {
+				exit(1);
 			}
+			/*
+			 * If there's nothing changed on any of the sockets, the server
+			 * will sleep and other processes will have a change to run. Control
+			 * this behaviour with the timeout options.
+			 */
+			$server->getConnectionManager()->selectAndProcess();
+			/*
+			 * If the application wants to perform periodic operations or queries and push updates to clients based on the result then that logic can be implemented in the 'onUpdate' method.
+			 */
+			foreach ($property->getValue($server) as $application) {
+				if (method_exists($application, 'onUpdate')) {
+					$application->onUpdate();
+				}
+			}
+			usleep(2);
 		}
 	}
 

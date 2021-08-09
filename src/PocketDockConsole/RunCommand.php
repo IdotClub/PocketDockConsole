@@ -2,23 +2,27 @@
 
 namespace PocketDockConsole;
 
-use pocketmine\command\ConsoleCommandSender;
+use pocketmine\console\ConsoleCommandSender;
 use pocketmine\scheduler\Task;
-use pocketmine\ThreadManager;
+use pocketmine\Server;
 use pocketmine\utils\Internet;
-use pocketmine\utils\Utils;
+use pocketmine\utils\Process;
+use Webmozart\PathUtil\Path;
 use const pocketmine\PLUGIN_PATH;
 
 class RunCommand extends Task {
 
 	public $temp = [];
 	public $owner = null;
+	protected $currentTick = 0;
+
 
 	public function __construct($owner) {
 		$this->owner = $owner;
+		$this->sender = new ConsoleCommandSender(Server::getInstance(), Server::getInstance()->getLanguage());
 	}
 
-	public function onRun($currentTick) {
+	public function onRun() : void {
 		$buffer = $this->owner->thread->getBuffer();
 		if (substr($buffer, 0, 6) == "{JSON}") {
 			$buffer = str_replace("{JSON}", "", $buffer);
@@ -29,7 +33,7 @@ class RunCommand extends Task {
 			$buffer = trim($buffer);
 			echo $buffer . "\n";
 			$this->owner->attachment->log("info", $buffer);
-			$this->owner->getServer()->dispatchCommand(new ConsoleCommandSender, $buffer);
+			$this->owner->getServer()->dispatchCommand($this->sender, $buffer);
 			$this->owner->thread->buffer = "";
 			$this->updateInfo();
 		} elseif ($this->isJSON(trim($buffer)) && trim($buffer) != "") {
@@ -45,7 +49,7 @@ class RunCommand extends Task {
 
 		$this->owner->thread->sendUpdate = false;
 
-		if (substr($currentTick, -2) == 20) {
+		if ($this->currentTick % 20) {
 			$this->updateInfo();
 			$this->owner->thread->sendUpdate = false;
 			$this->owner->thread->buffer = "";
@@ -56,10 +60,10 @@ class RunCommand extends Task {
 			$this->owner->thread->clearstream = false;
 		}
 
-		$currentTickSubString = substr(strval($currentTick), -2);
-		if ($currentTickSubString === "10") {
+		if ($this->currentTick % 10) {
 			$this->updateInfo();
 		}
+		$this->currentTick++;
 	}
 
 	public function parseJSON($string) {
@@ -173,6 +177,7 @@ class RunCommand extends Task {
 				}
 				break;
 		}
+		return null;
 	}
 
 	/*public function isJSON($string) {
@@ -183,15 +188,27 @@ class RunCommand extends Task {
 	public function updateInfo($user = "") {
 		$data = ["type" => "data", "data" => ["players" => $this->sendPlayers($user), "bans" => $this->sendNameBans(), "ipbans" => $this->sendIPBans(), "ops" => $this->sendOps(), "plugins" => $this->sendPlugins()]];
 		$this->owner->thread->jsonStream .= json_encode($data) . "\n";
-		if (!$this->owner->legacy) {
-			$u = $this->getMemoryUsage(true);
-			$d = $this->getRealMemoryUsage();
-			$usage = round(($u[0] / 1024) / 1024, 2) . "/" . round(($d[0] / 1024) / 1024, 2) . "/" . round(($u[1] / 1024) / 1024, 2) . "/" . round(($u[2] / 1024) / 1024, 2) . " MB @ " . $this->getThreadCount() . " threads";
-			$title = "\x1b]0;" . $this->owner->getServer()->getName() . " " . $this->owner->getServer()->getPocketMineVersion() . " | Online " . count($this->owner->getServer()->getOnlinePlayers()) . "/" . $this->owner->getServer()->getMaxPlayers() . " | Memory " . $usage . " | U " . round($this->owner->getServer()->getNetwork()->getUpload() / 1024, 2) . " D " . round($this->owner->getServer()->getNetwork()->getDownload() / 1024, 2) . " kB/s | TPS " . $this->owner->getServer()->getTicksPerSecond() . " | Load " . $this->owner->getServer()->getTickUsage() . "%\x07";
-		} else {
-			$this->backwardsCompat();
-			$title = "\x1b]0;PocketMine-MP " . $this->owner->getServer()->getPocketMineVersion() . " | Online " . count($this->owner->getServer()->getOnlinePlayers()) . "/" . $this->owner->getServer()->getMaxPlayers() . " | RAM " . round((memory_get_usage() / 1024) / 1024, 2) . "/" . round((memory_get_usage(true) / 1024) / 1024, 2) . " MB | U " . round($this->mainInterface->getUploadUsage() / 1024, 2) . " D " . round($this->mainInterface->getDownloadUsage() / 1024, 2) . " kB/s | TPS " . $this->owner->getServer()->getTicksPerSecond() . " | Load " . $this->owner->getServer()->getTickUsage() . "%\x07";
-		}
+
+		$d = Process::getRealMemoryUsage();
+
+		$u = Process::getAdvancedMemoryUsage();
+		$usage = sprintf("%g/%g/%g/%g MB @ %d threads", round(($u[0] / 1024) / 1024, 2), round(($d[0] / 1024) / 1024, 2), round(($u[1] / 1024) / 1024, 2), round(($u[2] / 1024) / 1024, 2), Process::getThreadCount());
+
+		$server = Server::getInstance();
+		$online = count($server->getOnlinePlayers());
+		$connecting = $server->getNetwork()->getConnectionCount() - $online;
+		$bandwidthStats = $server->getNetwork()->getBandwidthTracker();
+
+		$title = "\x1b]0;" . $server->getName() . " " .
+			$server->getPocketMineVersion() .
+			" | Online $online/" . $server->getMaxPlayers() .
+			($connecting > 0 ? " (+$connecting connecting)" : "") .
+			" | Memory " . $usage .
+			" | U " . round($bandwidthStats->getSend()->getAverageBytes() / 1024, 2) .
+			" D " . round($bandwidthStats->getReceive()->getAverageBytes() / 1024, 2) .
+			" kB/s | TPS " . $server->getTicksPerSecondAverage() .
+			" | Load " . $server->getTickUsageAverage() . "%\x07";
+
 		$this->owner->thread->stuffTitle = $title;
 		return true;
 	}
@@ -246,71 +263,10 @@ class RunCommand extends Task {
 		return $names;
 	}
 
-	public function getMemoryUsage($advanced = false) {
-		$reserved = memory_get_usage();
-		$VmSize = null;
-		$VmRSS = null;
-		if (Utils::getOS() === "linux" or Utils::getOS() === "android") {
-			$status = file_get_contents("/proc/self/status");
-			if (preg_match("/VmRSS:[ \t]+([0-9]+) kB/", $status, $matches) > 0) {
-				$VmRSS = $matches[1] * 1024;
-			}
-			if (preg_match("/VmSize:[ \t]+([0-9]+) kB/", $status, $matches) > 0) {
-				$VmSize = $matches[1] * 1024;
-			}
-		}
-		//TODO: more OS
-		if ($VmRSS === null) {
-			$VmRSS = memory_get_usage();
-		}
-		if (!$advanced) {
-			return $VmRSS;
-		}
-		if ($VmSize === null) {
-			$VmSize = memory_get_usage(true);
-		}
-		return [$reserved, $VmRSS, $VmSize];
-	}
-
-	public function getRealMemoryUsage() {
-		$stack = 0;
-		$heap = 0;
-		if (Utils::getOS() === "linux" or Utils::getOS() === "android") {
-			$mappings = file("/proc/self/maps");
-			foreach ($mappings as $line) {
-				if (preg_match("#([a-z0-9]+)\\-([a-z0-9]+) [rwxp\\-]{4} [a-z0-9]+ [^\\[]*\\[([a-zA-z0-9]+)\\]#", trim($line), $matches) > 0) {
-					if (strpos($matches[3], "heap") === 0) {
-						$heap += hexdec($matches[2]) - hexdec($matches[1]);
-					} elseif (strpos($matches[3], "stack") === 0) {
-						$stack += hexdec($matches[2]) - hexdec($matches[1]);
-					}
-				}
-			}
-		}
-		return [$heap, $stack];
-	}
-
-	public function getThreadCount() {
-		if (Utils::getOS() === "linux" or Utils::getOS() === "android") {
-			if (preg_match("/Threads:[ \t]+([0-9]+)/", file_get_contents("/proc/self/status"), $matches) > 0) {
-				return (int) $matches[1];
-			}
-		}
-		//TODO: more OS
-		return count(ThreadManager::getInstance()->getAll()) + 3; //RakLib + MainLogger + Main Thread
-
-	}
-
-	public function backwardsCompat() {
-		$interfaces = $this->owner->getServer()->getInterfaces();
-		$values = array_values($interfaces);
-		$this->mainInterface = $values[0];
-	}
-
 	public function updatePlugins($plugins) {
 		foreach ($plugins as $pl) {
 			$plugininfo = $this->getUrl($pl);
-			file_put_contents(PLUGIN_PATH . $plugininfo["name"] . ".phar", Internet::getURL($plugininfo['link']));
+			file_put_contents(Server::getInstance()->getPluginPath() . $plugininfo["name"] . ".phar", Internet::getURL($plugininfo['link'])->getBody());
 			$this->owner->getLogger()->info($plugininfo["name"] . " is now installed. Please restart or reload the server.");
 		}
 	}
@@ -318,7 +274,7 @@ class RunCommand extends Task {
 	# Taken from PocketMine-MP (new versions) for backwards compatibility
 
 	public function getUrl($id) {
-		$json = json_decode(Internet::getURL("https://poggit.pmmp.io/plugins.min.json"), true);
+		$json = json_decode(Internet::getURL("https://poggit.pmmp.io/plugins.min.json")->getBody(), true);
 		foreach ($json as $index => $res) {
 			if (strval($res["id"]) == strval($id)) {
 				$dlink = $res["artifact_url"];
@@ -328,14 +284,12 @@ class RunCommand extends Task {
 	}
 
 	public function removePlugins($plugins) {
-		$pluginnames = [];
-		foreach ($this->owner->getServer()->getPluginManager()->getPlugins() as $plugin) {
-			$pluginnames[] = $plugin->getName();
-		}
+		$path = Server::getInstance()->getPluginPath();
 		foreach ($this->owner->getServer()->getPluginManager()->getPlugins() as $plugin) {
 			if (in_array($plugin->getName(), $plugins)) {
-				if (file_exists(PLUGIN_PATH . $plugin->getName() . ".phar")) {
-					unlink(PLUGIN_PATH . $plugin->getName() . ".phar");
+				$pluginPath = Path::join($path, $plugin->getName() . ".phar");
+				if (file_exists($pluginPath)) {
+					unlink($pluginPath);
 					$this->owner->getLogger()->info($plugin->getName() . " was removed. Please restart or reload the server.");
 				} else {
 					$this->owner->getLogger()->info("Unable to remove " . $plugin->getName() . " automatically. Please remove it manually and reload the server.");

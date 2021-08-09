@@ -2,11 +2,10 @@
 
 namespace PocketDockConsole;
 
-use LoggerAttachment;
 use pocketmine\utils\Terminal;
 use ThreadedLoggerAttachment;
 
-class Attachment extends ThreadedLoggerAttachment implements LoggerAttachment {
+class Attachment extends ThreadedLoggerAttachment {
 
 	public function __construct($thread) {
 		$this->stream = "";
