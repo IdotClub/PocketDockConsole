@@ -59,10 +59,6 @@ class RunCommand extends Task {
 			$this->owner->attachment->stream = "";
 			$this->owner->thread->clearstream = false;
 		}
-
-		if ($this->currentTick % 10) {
-			$this->updateInfo();
-		}
 		$this->currentTick++;
 	}
 
